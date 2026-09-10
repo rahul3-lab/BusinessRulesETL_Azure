@@ -1,0 +1,36 @@
+{
+  "rules": [
+    {
+      "rule_id": "R001",
+      "description": "Flag transactions above high-value threshold for review",
+      "column": "transaction_amount",
+      "operator": ">",
+      "value": 50000,
+      "action": "flag_for_review"
+    },
+    {
+      "rule_id": "R002",
+      "description": "Reject rows with missing customer_id",
+      "column": "customer_id",
+      "operator": "is_null",
+      "value": null,
+      "action": "reject"
+    },
+    {
+      "rule_id": "R003",
+      "description": "Flag transactions from blocked regions",
+      "column": "region",
+      "operator": "in",
+      "value": ["EMBARGO_A", "EMBARGO_B"],
+      "action": "flag_for_review"
+    },
+    {
+      "rule_id": "R004",
+      "description": "Reject negative transaction amounts",
+      "column": "transaction_amount",
+      "operator": "<",
+      "value": 0,
+      "action": "reject"
+    }
+  ]
+}

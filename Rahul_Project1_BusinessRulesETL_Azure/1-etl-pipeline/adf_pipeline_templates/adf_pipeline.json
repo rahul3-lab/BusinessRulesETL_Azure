@@ -1,0 +1,63 @@
+{
+  "name": "pl_business_rules_etl",
+  "properties": {
+    "description": "Orchestrates ingestion from ADLS Gen2, triggers the Databricks PySpark rules-engine notebook/job, and lands clean/flagged/rejected outputs back to ADLS Gen2 and Synapse.",
+    "parameters": {
+      "inputContainer": { "type": "string", "defaultValue": "raw" },
+      "outputContainer": { "type": "string", "defaultValue": "curated" },
+      "rulesConfigPath": { "type": "string", "defaultValue": "config/business_rules.json" }
+    },
+    "activities": [
+      {
+        "name": "Validate_Source_File_Exists",
+        "type": "GetMetadata",
+        "typeProperties": {
+          "dataset": { "referenceName": "ds_adls_raw_transactions", "type": "DatasetReference" },
+          "fieldList": ["exists"]
+        }
+      },
+      {
+        "name": "Run_Databricks_RulesEngine_Job",
+        "type": "DatabricksNotebook",
+        "dependsOn": [
+          { "activity": "Validate_Source_File_Exists", "dependencyConditions": ["Succeeded"] }
+        ],
+        "typeProperties": {
+          "notebookPath": "/Shared/etl/etl_pipeline",
+          "baseParameters": {
+            "input": "@concat('abfss://', pipeline().parameters.inputContainer, '@<storage-account>.dfs.core.windows.net/raw_transactions.csv')",
+            "rules": "@pipeline().parameters.rulesConfigPath",
+            "output-dir": "@concat('abfss://', pipeline().parameters.outputContainer, '@<storage-account>.dfs.core.windows.net/output')"
+          }
+        },
+        "linkedServiceName": { "referenceName": "ls_azure_databricks", "type": "LinkedServiceReference" }
+      },
+      {
+        "name": "Copy_Clean_Data_To_Synapse",
+        "type": "Copy",
+        "dependsOn": [
+          { "activity": "Run_Databricks_RulesEngine_Job", "dependencyConditions": ["Succeeded"] }
+        ],
+        "typeProperties": {
+          "source": { "type": "DelimitedTextSource" },
+          "sink": { "type": "SqlDWSink", "allowCopyCommand": true }
+        },
+        "inputs": [{ "referenceName": "ds_adls_clean_transactions", "type": "DatasetReference" }],
+        "outputs": [{ "referenceName": "ds_synapse_transactions", "type": "DatasetReference" }]
+      },
+      {
+        "name": "Send_Alert_On_Rejected_Rows",
+        "type": "WebActivity",
+        "dependsOn": [
+          { "activity": "Run_Databricks_RulesEngine_Job", "dependencyConditions": ["Succeeded"] }
+        ],
+        "typeProperties": {
+          "url": "@pipeline().globalParameters.teamsWebhookUrl",
+          "method": "POST",
+          "body": "@concat('Business rules ETL completed. Check rejected_transactions for issues.')"
+        }
+      }
+    ],
+    "annotations": ["business-rules-etl", "portfolio-project"]
+  }
+}
